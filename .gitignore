@@ -1,0 +1,6 @@
+# Discord .env file
+.env
+
+# VSCode related
+.metals/
+.vscode/
