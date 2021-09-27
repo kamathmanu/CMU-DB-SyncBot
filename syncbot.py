@@ -10,12 +10,9 @@ import discord
 from discord.ext import tasks
 from discord.ext.commands import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
+import json
 
 #Load environment variables
-
-send_time='20:15' #time is in 24hr format
-
 load_dotenv()
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 DISCORD_GUILD = os.getenv('DISCORD_GUILD')
@@ -25,7 +22,6 @@ CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
 # Constants
 
 SECONDS_IN_A_MIN = 60
-N = 2 * SECONDS_IN_A_MIN
 
 # Configure discord bot
 
@@ -34,42 +30,48 @@ client = discord.Client(intents=intents)
 client = Bot(command_prefix=BOT_PREFIX)
 
 ###########################################
-### Lecture Annoucement
-###########################################
-
-def create_announcement(link, time):
-    return ""
-
-async def send_announcement(link, time):
-    await client.wait_until_ready()
-    channel = client.get_channel(CHANNEL_ID)
-    await channel.send(create_announcement(link, time))
-
-###########################################
 ### Event Handlers for Discord Bot
 ###########################################
 
+def create_announcement(title, link, playAt):
+    # countdownInMin = (playAt - datetime.now()).total_seconds() // SECONDS_IN_A_MIN
+    announcement = "Today we continue with {}. Lecture will be in {} in 15 minutes!".format(title, link)
+    return announcement
+
+def create_date_from(timeStr : str):
+    tokens = [int(timeField.strip()) for timeField in timeStr.split(',')] # yr, mth, date, hr, min
+    return datetime(tokens[0], tokens[1], tokens[2], tokens[3], tokens[4])
+
+@client.event
+async def send_announcement(title, link, playAt):
+    await client.wait_until_ready()
+    channel = client.get_channel(CHANNEL_ID)
+    await channel.send(create_announcement(title, link, playAt))
+
 @client.event
 async def on_ready():
+    """
+    Sets up scheduler, database for lecture playlist and annoucement schedule
+    """
+    announcementScheduler = AsyncIOScheduler()
+    # lecturesInfo is a list which has extracted the relevant fields of each 
+    lecturesInfo = [
+        {"title": "Concurrency Control II", "url": "http://youtube.com/...1", "announceAt": "2021,9, 23, 21, 29", "playAt": "2021, 9, 25, 21, 15"},
+        {"title": "Transactions", "url": "http://youtube.com/...transactions", "announceAt": "2021, 9, 23, 21, 33", "playAt": "2021, 9, 27, 21, 15"},
+        {"title": "OLTP Indexes (Part I)", "url": "http://youtube.com/...oltp", "announceAt": "2021, 9, 23, 21, 39", "playAt": "2021, 9, 28, 21, 15"},
+        {"title": "Query Optimization", "url": "http://youtube.com/...qopt", "announceAt": "2021, 9, 23, 21, 41", "playAt": "2021, 9, 30, 21, 15"},
+    ]
 
-    announcement_scheduler = AsyncIOScheduler()
-    # announcement_scheduler.add_jobstore()
-    # announcement_scheduler.add_executor()
-    # announcement_scheduler.add_listener()
-    # scheduler.add_job(func, CronTrigger(hour="24", minute="0", second="0")) 
-    # announcement_scheduler.start()
+    for jsonElement in lecturesInfo:
 
-@tasks.loop(seconds=N)
-async def called_every_n_min():
-    message = "Testing!"
-    channel = client.get_channel(CHANNEL_ID)
-    await channel.send(message)
+        videoTitle = jsonElement["title"]
+        synctubeUrl = jsonElement["url"]
+        announceAt = create_date_from(jsonElement["announceAt"])
+        playAt = create_date_from(jsonElement["playAt"])
 
-@called_every_n_min.before_loop
-async def before():
-    await client.wait_until_ready()
-    print("Sending announcement")
+        announcementScheduler.add_job(send_announcement, trigger='date', run_date=announceAt, \
+                                      args=[videoTitle, synctubeUrl, playAt])
+    announcementScheduler.start()
 
 if __name__ == '__main__':
-    called_every_n_min.start()
     client.run(DISCORD_TOKEN)
