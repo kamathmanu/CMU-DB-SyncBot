@@ -4,3 +4,6 @@
 # VSCode related
 .metals/
 .vscode/
+
+#Selenium
+chromedriver

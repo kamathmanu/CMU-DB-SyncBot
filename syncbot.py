@@ -6,11 +6,16 @@ from dotenv import load_dotenv
 
 # Third party modules
 
+import json
 import discord
 from discord.ext import tasks
 from discord.ext.commands import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import json
+from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as ec
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 
 #Load environment variables
 load_dotenv()
@@ -18,16 +23,68 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 DISCORD_GUILD = os.getenv('DISCORD_GUILD')
 BOT_PREFIX = ("?", "!")
 CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
+WEBDRIVER_PATH = os.getenv('WEBDRIVER_PATH')
+BROWSER_BINARY_PATH = os.getenv('BROWSER_BINARY_PATH')
 
 # Constants
 
 SECONDS_IN_A_MIN = 60
+SYNCTUBE_NEWROOM_URL = "https://sync-tube.de/create"
+
+# Selenium API - Chromium assumed but can easily modify to browser of choice
+
+chromiumOptions = webdriver.ChromeOptions()
+chromiumOptions.binary_location = BROWSER_BINARY_PATH
+# chromiumOptions.add_argument("--headless")
 
 # Configure discord bot
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 client = Bot(command_prefix=BOT_PREFIX)
+
+###########################################
+### Handlers for Selenium Video Syncing
+###########################################
+
+async def prepare_synctube_room(chromeDriver, room, youtubeUrl):
+    
+    # get the searchbar, and simulate a click followed by the entering of the youtubeUrl
+    WebDriverWait(chromeDriver, 5).until(ec.presence_of_element_located((By.CSS_SELECTOR, 'input.searchInput')))
+    searchBarElement = chromeDriver.find_element_by_css_selector('input.searchInput')
+    searchBarElement.click()
+    searchBarElement.send_keys(youtubeUrl)
+    searchBarElement.send_keys(Keys.ENTER)
+    
+    # restrict guests from adding members or commenting
+    chromeDriver.find_element_by_id('btnSettings').click()
+    
+    chromeDriver.find_element_by_css_selector(\
+        '#table_permissions > tbody > tr:nth-child(2) > td:nth-child(2) > #\\30').click() # Add => Guest turned off
+
+    chromeDriver.find_element_by_css_selector(\
+        '#table_permissions > tbody > tr:nth-child(8) > td:nth-child(2) > #\\30').click() # Use Chat => Guest turned off
+    
+    # close the settings page
+    closeSettings = chromeDriver.find_element_by_css_selector('body > div > div.settings.settings_visible > div.btnClose > img')
+    closeSettings.click()
+
+    player_status = chromeDriver.execute_script("return document.getElementsByClassName('html5-video-player')[0].getPlayerState()")
+    await player_status == 0
+
+async def sync_video(youtubeUrl):
+    """
+    Creates a room in sync-tube.de for a given youtubeUrl
+    Returns the URL for the synctube room created
+    """
+    # reach the creation page for a new room
+    chromeDriver = webdriver.Chrome(options=chromiumOptions, executable_path=WEBDRIVER_PATH)
+    chromeDriver.get(SYNCTUBE_NEWROOM_URL)
+    """asyncio.run("""
+    await prepare_synctube_room(chromeDriver, chromeDriver.current_url, youtubeUrl)
+
+    chromeDriver.ex
+    # chromeDriver.quit()
 
 ###########################################
 ### Event Handlers for Discord Bot
@@ -74,4 +131,8 @@ async def on_ready():
     announcementScheduler.start()
 
 if __name__ == '__main__':
-    client.run(DISCORD_TOKEN)
+    # client.run(DISCORD_TOKEN)
+    asyncio.run(sync_video("https://www.youtube.com/watch?v=oeYBdghaIjc&list=PLSE8ODhjZXjbohkNBWQs_otTrBTrjyohi"))
+
+
+    
